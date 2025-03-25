@@ -1,13 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import os
+file_path = os.path.join(os.path.dirname(__file__), "main_data.csv")
+df = pd.read_csv(file_path, parse_dates=["order_purchase_time"])
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv("main_data.csv", parse_dates=["order_purchase_timestamp"])
-    return df
-
-df = load_data()
 
 st.sidebar.title("📊 Olist Dashboard")
 option = st.sidebar.selectbox("Pilih Analisis:", ["Overview Data", "RFM Analysis", "Distribusi Geografis"])
