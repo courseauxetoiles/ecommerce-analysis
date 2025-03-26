@@ -8,6 +8,7 @@ st.title("📊 E-Commerce Analysis Dashboard")
 
 # Pastikan file tersedia sebelum memuat data
 file_path = os.path.join(os.path.dirname(__file__), "main_data.csv")
+geo_file = os.path.join(os.path.dirname(__file__), "../data/olist_geolocation_dataset.csv")
 
 if not os.path.exists(file_path):
     st.error("⚠️ File 'main_data.csv' tidak ditemukan. Pastikan file tersedia di repo GitHub!")
@@ -100,43 +101,34 @@ elif option == "RFM Analysis":
     st.plotly_chart(fig_segment, use_container_width=True)
 
 # ========================== 5️⃣ DISTRIBUSI GEOGRAFIS ==========================
-# Pastikan dataset geolocation tersedia
-geolocation_file = os.path.join(os.path.dirname(__file__), "../data/olist_geolocation_dataset.csv")
+elif option == "Distribusi Geografis":
+    st.header("🌍 Distribusi Geografis Pesanan")
 
-if not os.path.exists(geolocation_file):
-    st.error("⚠️ File 'olist_geolocation_dataset.csv' tidak ditemukan. Pastikan tersedia di folder 'data'.")
-    st.stop()
+    # Cek apakah dataset geolocation tersedia
+    if not os.path.exists(geo_file):
+        st.error("⚠️ File 'olist_geolocation_dataset.csv' tidak ditemukan. Pastikan tersedia di folder 'data'.")
+        st.stop()
 
-# Baca dataset geolokasi dan gabungkan dengan df
-geolocation = pd.read_csv(geolocation_file)
+    # Baca dataset geolocation dan gabungkan dengan df
+    geo = pd.read_csv(geo_file)
+    df = df.merge(
+        geo[["geolocation_zip_code_prefix", "geolocation_lat", "geolocation_lng"]],
+        left_on="customer_zip_code_prefix",
+        right_on="geolocation_zip_code_prefix",
+        how="left"
+    ).dropna(subset=["geolocation_lat", "geolocation_lng"])
 
-# Pastikan kolom yang diperlukan ada
-if "geolocation_zip_code_prefix" not in geolocation.columns:
-    st.error("⚠️ Data geolocation tidak memiliki kolom 'geolocation_zip_code_prefix'.")
-    st.stop()
-
-# Gabungkan geolocation dengan df berdasarkan zip code pelanggan
-df = df.merge(
-    geolocation[["geolocation_zip_code_prefix", "geolocation_lat", "geolocation_lng"]],
-    left_on="customer_zip_code_prefix",
-    right_on="geolocation_zip_code_prefix",
-    how="left"
-)
-
-# Hapus duplikasi atau nilai NaN setelah merge
-df = df.dropna(subset=["geolocation_lat", "geolocation_lng"])
-
-
-fig_scatter = px.scatter(
-    df,
-    x="geolocation_lat",
-    y="geolocation_lng",
-    color="delivery_time",
-    title="Hubungan Jarak dan Waktu Pengiriman",
-    template="plotly_dark",
-    opacity=0.6
-)
-st.plotly_chart(fig_scatter, use_container_width=True)
+    # 🎯 Scatter Plot Hubungan Jarak dan Waktu Pengiriman
+    fig_scatter = px.scatter(
+        df,
+        x="geolocation_lat",
+        y="geolocation_lng",
+        color="delivery_time",
+        title="Hubungan Jarak dan Waktu Pengiriman",
+        template="plotly_dark",
+        opacity=0.6
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
 
 # ========================== 6️⃣ KATEGORI PRODUK ==========================
 elif option == "Kategori Produk":
@@ -158,3 +150,19 @@ elif option == "Kategori Produk":
         color="Jumlah Penjualan"
     )
     st.plotly_chart(fig_category, use_container_width=True)
+
+    # 🎯 Tren Penjualan Bulanan per Kategori Produk
+    df["order_month"] = df["order_purchase_timestamp"].dt.to_period("M").astype(str)
+    category_monthly_sales = df.groupby(["order_month", "product_category_name_english"])["order_id"].count().reset_index()
+
+    fig_category_trend = px.line(
+        category_monthly_sales,
+        x="order_month",
+        y="order_id",
+        color="product_category_name_english",
+        title="📈 Tren Penjualan Bulanan per Kategori Produk",
+        template="plotly_dark",
+        markers=True
+    )
+
+    st.plotly_chart(fig_category_trend, use_container_width=True)
