@@ -17,7 +17,9 @@ df = pd.read_csv(file_path, parse_dates=["order_purchase_timestamp"])
 
 # ========================== 2️⃣ SIDEBAR MENU ==========================
 st.sidebar.title("🔍 Pilih Analisis")
-option = st.sidebar.radio("Pilih Analisis:", ["Overview Data", "RFM Analysis", "Distribusi Geografis"])
+option = st.sidebar.radio("Pilih Analisis:", [
+    "Overview Data", "RFM Analysis", "Distribusi Geografis", "Kategori Produk"
+])
 
 # ========================== 3️⃣ OVERVIEW DATA ==========================
 if option == "Overview Data":
@@ -27,40 +29,34 @@ if option == "Overview Data":
     col1.metric("Total Pelanggan", df["customer_id"].nunique())
     col2.metric("Total Pesanan", df.shape[0])
     
-    # Fitur interaktif: Filter berdasarkan rentang tanggal
-    df["order_day"] = df["order_purchase_timestamp"].dt.date
-    min_date = df["order_day"].min()
-    max_date = df["order_day"].max()
+    # 🎯 Tren Jumlah Pesanan Per Bulan
+    df["order_month"] = df["order_purchase_timestamp"].dt.to_period("M").astype(str)
+    monthly_orders = df.groupby("order_month")["order_id"].count().reset_index()
 
-    start_date, end_date = st.sidebar.date_input(
-        "Pilih Rentang Tanggal",
-        [min_date, max_date],
-        min_value=min_date,
-        max_value=max_date
+    fig_tren_bulanan = px.line(
+        monthly_orders, 
+        x="order_month", 
+        y="order_id", 
+        markers=True, 
+        title="📈 Tren Jumlah Pesanan Per Bulan",
+        template="plotly_dark"
     )
 
-    df_filtered = df[(df["order_day"] >= start_date) & (df["order_day"] <= end_date)]
-    daily_counts = df_filtered.groupby("order_day").size().reset_index(name="jumlah_pesanan")
+    fig_tren_bulanan.update_layout(
+        xaxis_title="Bulan",
+        yaxis_title="Jumlah Pesanan",
+        xaxis=dict(tickangle=-45)
+    )
 
-    fig_daily = px.line(daily_counts, x="order_day", y="jumlah_pesanan",
-                        title="📈 Tren Pesanan Harian", template="plotly_dark")
-    st.plotly_chart(fig_daily, use_container_width=True)
-
-    df_filtered["order_month_str"] = df_filtered["order_purchase_timestamp"].dt.to_period("M").astype(str)
-    monthly_counts = df_filtered.groupby("order_month_str").size().reset_index(name="jumlah_pesanan")
-
-    fig_monthly = px.bar(monthly_counts, x="order_month_str", y="jumlah_pesanan",
-                         title="📅 Tren Pesanan Bulanan", template="plotly_dark")
-    st.plotly_chart(fig_monthly, use_container_width=True)
+    st.plotly_chart(fig_tren_bulanan, use_container_width=True)
 
 # ========================== 4️⃣ RFM ANALYSIS ==========================
 elif option == "RFM Analysis":
     st.header("📈 RFM Analysis")
 
-    # Cek apakah kolom yang diperlukan ada
-    required_columns = ["customer_id", "recency", "frequency", "monetary"]
+    required_columns = ["customer_id", "recency", "frequency", "monetary", "Segment"]
     if not all(col in df.columns for col in required_columns):
-        st.error("⚠️ Data RFM tidak ditemukan. Pastikan kolom 'recency', 'frequency', dan 'monetary' tersedia dalam CSV.")
+        st.error("⚠️ Data RFM tidak ditemukan. Pastikan kolom 'recency', 'frequency', 'monetary', dan 'Segment' tersedia.")
         st.stop()
     
     rfm = df.groupby("customer_id").agg(
@@ -69,35 +65,76 @@ elif option == "RFM Analysis":
         monetary=("monetary", "sum")
     ).reset_index()
 
-    # Fitur interaktif: Filter berdasarkan kategori pelanggan
-    rfm["Kategori"] = pd.cut(
-        rfm["recency"],
-        bins=[0, 30, 90, 180, 365, float("inf")],
-        labels=["Loyal", "Potensial", "Baru", "Berisiko", "Hilang"]
+    # 🎯 Distribusi Recency, Frequency, Monetary
+    fig_rfm_recency = px.histogram(rfm, x="recency", nbins=30, title="Distribusi Recency", template="plotly_dark")
+    fig_rfm_frequency = px.histogram(rfm, x="frequency", nbins=30, title="Distribusi Frequency", template="plotly_dark")
+    fig_rfm_monetary = px.histogram(rfm, x="monetary", nbins=30, title="Distribusi Monetary", template="plotly_dark")
+
+    st.plotly_chart(fig_rfm_recency, use_container_width=True)
+    st.plotly_chart(fig_rfm_frequency, use_container_width=True)
+    st.plotly_chart(fig_rfm_monetary, use_container_width=True)
+
+    # 🎯 Proporsi One-Time Buyers vs Repeat Customers
+    one_time_buyers = (rfm["frequency"] == 1).sum()
+    repeat_customers = len(rfm) - one_time_buyers
+
+    fig_pie = px.pie(
+        names=["One-Time Buyers", "Repeat Customers"],
+        values=[one_time_buyers, repeat_customers],
+        title="Proporsi One-Time Buyers vs Repeat Customers",
+        color_discrete_sequence=["#ff9999", "#66b3ff"]
     )
+    st.plotly_chart(fig_pie, use_container_width=True)
 
-    kategori_pilihan = st.sidebar.selectbox("Pilih Kategori Pelanggan", rfm["Kategori"].unique())
-    rfm_filtered = rfm[rfm["Kategori"] == kategori_pilihan]
+    # 🎯 Distribusi Segmen Pelanggan berdasarkan RFM
+    segment_counts = df["Segment"].value_counts().reset_index()
+    segment_counts.columns = ["Segment", "Jumlah Pelanggan"]
 
-    fig_rfm = px.scatter(rfm_filtered, x="recency", y="frequency", size="monetary", color="monetary",
-                         title=f"📊 Scatter Plot RFM - {kategori_pilihan}", template="plotly_dark")
-    st.plotly_chart(fig_rfm, use_container_width=True)
+    fig_segment = px.bar(
+        segment_counts,
+        x="Segment",
+        y="Jumlah Pelanggan",
+        title="Distribusi Segmen Pelanggan berdasarkan RFM",
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig_segment, use_container_width=True)
 
 # ========================== 5️⃣ DISTRIBUSI GEOGRAFIS ==========================
 elif option == "Distribusi Geografis":
     st.header("🌍 Distribusi Geografis Pesanan")
-    
-    # Cek apakah kolom customer_city ada
+
     if "customer_city" not in df.columns:
         st.error("⚠️ Data kota pelanggan tidak ditemukan.")
         st.stop()
-    
-    # Fitur interaktif: Pilih jumlah kota yang ingin ditampilkan
-    top_n = st.sidebar.slider("Tampilkan Top N Kota", min_value=5, max_value=20, value=10)
 
-    top_cities = df["customer_city"].value_counts().head(top_n).reset_index()
-    top_cities.columns = ["customer_city", "jumlah_pesanan"]
+    # 🎯 Scatter Plot Hubungan Jarak dan Waktu Pengiriman
+    fig_scatter = px.scatter(
+        df,
+        x="geolocation_lat",
+        y="geolocation_lng",
+        color="delivery_time",
+        title="Hubungan Jarak dan Waktu Pengiriman",
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig_scatter, use_container_width=True)
 
-    fig_geo = px.bar(top_cities, x="customer_city", y="jumlah_pesanan",
-                     title=f"🏙️ Top {top_n} Kota dengan Pesanan Terbanyak", template="plotly_dark")
-    st.plotly_chart(fig_geo, use_container_width=True)
+# ========================== 6️⃣ KATEGORI PRODUK ==========================
+elif option == "Kategori Produk":
+    st.header("🛍️ Kategori Produk dengan Penjualan Tertinggi")
+
+    if "product_category_name_english" not in df.columns:
+        st.error("⚠️ Data kategori produk tidak ditemukan.")
+        st.stop()
+
+    category_sales = df["product_category_name_english"].value_counts().head(10).reset_index()
+    category_sales.columns = ["Kategori Produk", "Jumlah Penjualan"]
+
+    fig_category = px.bar(
+        category_sales,
+        x="Kategori Produk",
+        y="Jumlah Penjualan",
+        title="Top 10 Kategori Produk dengan Penjualan Tertinggi",
+        template="plotly_dark",
+        color="Jumlah Penjualan"
+    )
+    st.plotly_chart(fig_category, use_container_width=True)
