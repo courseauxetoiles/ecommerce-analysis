@@ -100,23 +100,43 @@ elif option == "RFM Analysis":
     st.plotly_chart(fig_segment, use_container_width=True)
 
 # ========================== 5️⃣ DISTRIBUSI GEOGRAFIS ==========================
-elif option == "Distribusi Geografis":
-    st.header("🌍 Distribusi Geografis Pesanan")
+# Pastikan dataset geolocation tersedia
+geolocation_file = os.path.join(os.path.dirname(__file__), "../data/olist_geolocation_dataset.csv")
 
-    if "customer_city" not in df.columns:
-        st.error("⚠️ Data kota pelanggan tidak ditemukan.")
-        st.stop()
+if not os.path.exists(geolocation_file):
+    st.error("⚠️ File 'olist_geolocation_dataset.csv' tidak ditemukan. Pastikan tersedia di folder 'data'.")
+    st.stop()
 
-    # 🎯 Scatter Plot Hubungan Jarak dan Waktu Pengiriman
-    fig_scatter = px.scatter(
-        df,
-        x="geolocation_lat",
-        y="geolocation_lng",
-        color="delivery_time",
-        title="Hubungan Jarak dan Waktu Pengiriman",
-        template="plotly_dark"
-    )
-    st.plotly_chart(fig_scatter, use_container_width=True)
+# Baca dataset geolokasi dan gabungkan dengan df
+geolocation = pd.read_csv(geolocation_file)
+
+# Pastikan kolom yang diperlukan ada
+if "geolocation_zip_code_prefix" not in geolocation.columns:
+    st.error("⚠️ Data geolocation tidak memiliki kolom 'geolocation_zip_code_prefix'.")
+    st.stop()
+
+# Gabungkan geolocation dengan df berdasarkan zip code pelanggan
+df = df.merge(
+    geolocation[["geolocation_zip_code_prefix", "geolocation_lat", "geolocation_lng"]],
+    left_on="customer_zip_code_prefix",
+    right_on="geolocation_zip_code_prefix",
+    how="left"
+)
+
+# Hapus duplikasi atau nilai NaN setelah merge
+df = df.dropna(subset=["geolocation_lat", "geolocation_lng"])
+
+
+fig_scatter = px.scatter(
+    df,
+    x="geolocation_lat",
+    y="geolocation_lng",
+    color="delivery_time",
+    title="Hubungan Jarak dan Waktu Pengiriman",
+    template="plotly_dark",
+    opacity=0.6
+)
+st.plotly_chart(fig_scatter, use_container_width=True)
 
 # ========================== 6️⃣ KATEGORI PRODUK ==========================
 elif option == "Kategori Produk":
