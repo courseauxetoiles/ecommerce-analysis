@@ -8,13 +8,15 @@ st.title("📊 E-Commerce Analysis Dashboard")
 
 # Pastikan file tersedia sebelum memuat data
 file_path = os.path.join(os.path.dirname(__file__), "main_data.csv")
-geo_file = os.path.join(os.path.dirname(__file__), "../data/olist_geolocation_dataset.csv")
 
 if not os.path.exists(file_path):
     st.error("⚠️ File 'main_data.csv' tidak ditemukan. Pastikan file tersedia di repo GitHub!")
     st.stop()
 
 df = pd.read_csv(file_path, parse_dates=["order_purchase_timestamp"])
+
+# Isi NaN dengan nilai default agar tidak error
+df.fillna(0, inplace=True)
 
 # ========================== 2️⃣ SIDEBAR MENU ==========================
 st.sidebar.title("🔍 Pilih Analisis")
@@ -25,11 +27,11 @@ option = st.sidebar.radio("Pilih Analisis:", [
 # ========================== 3️⃣ OVERVIEW DATA ==========================
 if option == "Overview Data":
     st.header("📊 Overview Data")
-    
+
     col1, col2 = st.columns(2)
     col1.metric("Total Pelanggan", df["customer_id"].nunique())
     col2.metric("Total Pesanan", df.shape[0])
-    
+
     # 🎯 Tren Jumlah Pesanan Per Bulan
     df["order_month"] = df["order_purchase_timestamp"].dt.to_period("M").astype(str)
     monthly_orders = df.groupby("order_month")["order_id"].count().reset_index()
@@ -42,7 +44,6 @@ if option == "Overview Data":
         title="📈 Tren Jumlah Pesanan Per Bulan",
         template="plotly_dark"
     )
-
     fig_tren_bulanan.update_layout(
         xaxis_title="Bulan",
         yaxis_title="Jumlah Pesanan",
@@ -59,7 +60,7 @@ elif option == "RFM Analysis":
     if not all(col in df.columns for col in required_columns):
         st.error("⚠️ Data RFM tidak ditemukan. Pastikan kolom 'recency', 'frequency', 'monetary', dan 'Segment' tersedia.")
         st.stop()
-    
+
     rfm = df.groupby("customer_id").agg(
         recency=("recency", "min"),
         frequency=("frequency", "sum"),
@@ -104,19 +105,9 @@ elif option == "RFM Analysis":
 elif option == "Distribusi Geografis":
     st.header("🌍 Distribusi Geografis Pesanan")
 
-    # Cek apakah dataset geolocation tersedia
-    if not os.path.exists(geo_file):
-        st.error("⚠️ File 'olist_geolocation_dataset.csv' tidak ditemukan. Pastikan tersedia di folder 'data'.")
+    if not all(col in df.columns for col in ["geolocation_lat", "geolocation_lng"]):
+        st.error("⚠️ Data lokasi pelanggan tidak ditemukan dalam main_data.csv.")
         st.stop()
-
-    # Baca dataset geolocation dan gabungkan dengan df
-    geo = pd.read_csv(geo_file)
-    df = df.merge(
-        geo[["geolocation_zip_code_prefix", "geolocation_lat", "geolocation_lng"]],
-        left_on="customer_zip_code_prefix",
-        right_on="geolocation_zip_code_prefix",
-        how="left"
-    ).dropna(subset=["geolocation_lat", "geolocation_lng"])
 
     # 🎯 Scatter Plot Hubungan Jarak dan Waktu Pengiriman
     fig_scatter = px.scatter(
