@@ -18,23 +18,43 @@ df = pd.read_csv(file_path, parse_dates=["order_purchase_timestamp"])
 # Isi NaN dengan nilai default agar tidak error
 df.fillna(0, inplace=True)
 
-# ========================== 2️⃣ SIDEBAR MENU ==========================
+# ========================== 2️⃣ SIDEBAR MENU & FILTER ==========================
 st.sidebar.title("🔍 Pilih Analisis")
 option = st.sidebar.radio("Pilih Analisis:", [
     "Overview Data", "RFM Analysis", "Distribusi Geografis", "Kategori Produk"
 ])
+
+# **FILTER: Rentang Waktu**
+min_date = df["order_purchase_timestamp"].min().date()
+max_date = df["order_purchase_timestamp"].max().date()
+date_range = st.sidebar.slider("Pilih Rentang Waktu:", min_date, max_date, (min_date, max_date))
+df_filtered = df[(df["order_purchase_timestamp"].dt.date >= date_range[0]) &
+                 (df["order_purchase_timestamp"].dt.date <= date_range[1])]
+
+# **FILTER: Status Pesanan**
+order_status = st.sidebar.multiselect("Pilih Status Pesanan:", df["order_status"].unique(), default=df["order_status"].unique())
+df_filtered = df_filtered[df_filtered["order_status"].isin(order_status)]
+
+# **FILTER: Warna Tema Visualisasi**
+color_themes = {
+    "Dark": "plotly_dark",
+    "Light": "plotly_white",
+    "Solar": "solar",
+    "Seaborn": "seaborn"
+}
+selected_theme = st.sidebar.selectbox("Pilih Tema Visualisasi:", list(color_themes.keys()))
 
 # ========================== 3️⃣ OVERVIEW DATA ==========================
 if option == "Overview Data":
     st.header("📊 Overview Data")
 
     col1, col2 = st.columns(2)
-    col1.metric("Total Pelanggan", df["customer_id"].nunique())
-    col2.metric("Total Pesanan", df.shape[0])
+    col1.metric("Total Pelanggan", df_filtered["customer_id"].nunique())
+    col2.metric("Total Pesanan", df_filtered.shape[0])
 
     # 🎯 Tren Jumlah Pesanan Per Bulan
-    df["order_month"] = df["order_purchase_timestamp"].dt.to_period("M").astype(str)
-    monthly_orders = df.groupby("order_month")["order_id"].count().reset_index()
+    df_filtered["order_month"] = df_filtered["order_purchase_timestamp"].dt.to_period("M").astype(str)
+    monthly_orders = df_filtered.groupby("order_month")["order_id"].count().reset_index()
 
     fig_tren_bulanan = px.line(
         monthly_orders, 
@@ -42,7 +62,7 @@ if option == "Overview Data":
         y="order_id", 
         markers=True, 
         title="📈 Tren Jumlah Pesanan Per Bulan",
-        template="plotly_dark"
+        template=color_themes[selected_theme]
     )
     fig_tren_bulanan.update_layout(
         xaxis_title="Bulan",
@@ -57,66 +77,45 @@ elif option == "RFM Analysis":
     st.header("📈 RFM Analysis")
 
     required_columns = ["customer_id", "recency", "frequency", "monetary", "Segment"]
-    if not all(col in df.columns for col in required_columns):
-        st.error("⚠️ Data RFM tidak ditemukan. Pastikan kolom 'recency', 'frequency', 'monetary', dan 'Segment' tersedia.")
+    if not all(col in df_filtered.columns for col in required_columns):
+        st.error("⚠️ Data RFM tidak ditemukan. Pastikan kolom tersedia dalam dataset.")
         st.stop()
 
-    rfm = df.groupby("customer_id").agg(
+    # **FILTER: Segmentasi Pelanggan**
+    selected_segment = st.sidebar.multiselect("Pilih Segmentasi RFM:", df_filtered["Segment"].unique(), default=df_filtered["Segment"].unique())
+    df_filtered = df_filtered[df_filtered["Segment"].isin(selected_segment)]
+
+    rfm = df_filtered.groupby("customer_id").agg(
         recency=("recency", "min"),
         frequency=("frequency", "sum"),
         monetary=("monetary", "sum")
     ).reset_index()
 
     # 🎯 Distribusi Recency, Frequency, Monetary
-    fig_rfm_recency = px.histogram(rfm, x="recency", nbins=30, title="Distribusi Recency", template="plotly_dark")
-    fig_rfm_frequency = px.histogram(rfm, x="frequency", nbins=30, title="Distribusi Frequency", template="plotly_dark")
-    fig_rfm_monetary = px.histogram(rfm, x="monetary", nbins=30, title="Distribusi Monetary", template="plotly_dark")
+    fig_rfm_recency = px.histogram(rfm, x="recency", nbins=30, title="Distribusi Recency", template=color_themes[selected_theme])
+    fig_rfm_frequency = px.histogram(rfm, x="frequency", nbins=30, title="Distribusi Frequency", template=color_themes[selected_theme])
+    fig_rfm_monetary = px.histogram(rfm, x="monetary", nbins=30, title="Distribusi Monetary", template=color_themes[selected_theme])
 
     st.plotly_chart(fig_rfm_recency, use_container_width=True)
     st.plotly_chart(fig_rfm_frequency, use_container_width=True)
     st.plotly_chart(fig_rfm_monetary, use_container_width=True)
 
-    # 🎯 Proporsi One-Time Buyers vs Repeat Customers
-    one_time_buyers = (rfm["frequency"] == 1).sum()
-    repeat_customers = len(rfm) - one_time_buyers
-
-    fig_pie = px.pie(
-        names=["One-Time Buyers", "Repeat Customers"],
-        values=[one_time_buyers, repeat_customers],
-        title="Proporsi One-Time Buyers vs Repeat Customers",
-        color_discrete_sequence=["#ff9999", "#66b3ff"]
-    )
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-    # 🎯 Distribusi Segmen Pelanggan berdasarkan RFM
-    segment_counts = df["Segment"].value_counts().reset_index()
-    segment_counts.columns = ["Segment", "Jumlah Pelanggan"]
-
-    fig_segment = px.bar(
-        segment_counts,
-        x="Segment",
-        y="Jumlah Pelanggan",
-        title="Distribusi Segmen Pelanggan berdasarkan RFM",
-        template="plotly_dark"
-    )
-    st.plotly_chart(fig_segment, use_container_width=True)
-
 # ========================== 5️⃣ DISTRIBUSI GEOGRAFIS ==========================
 elif option == "Distribusi Geografis":
     st.header("🌍 Distribusi Geografis Pesanan")
 
-    if not all(col in df.columns for col in ["geolocation_lat", "geolocation_lng"]):
+    if not all(col in df_filtered.columns for col in ["geolocation_lat", "geolocation_lng"]):
         st.error("⚠️ Data lokasi pelanggan tidak ditemukan dalam main_data.csv.")
         st.stop()
 
     # 🎯 Scatter Plot Hubungan Jarak dan Waktu Pengiriman
     fig_scatter = px.scatter(
-        df,
+        df_filtered,
         x="geolocation_lat",
         y="geolocation_lng",
         color="delivery_time",
         title="Hubungan Jarak dan Waktu Pengiriman",
-        template="plotly_dark",
+        template=color_themes[selected_theme],
         opacity=0.6
     )
     st.plotly_chart(fig_scatter, use_container_width=True)
@@ -125,11 +124,11 @@ elif option == "Distribusi Geografis":
 elif option == "Kategori Produk":
     st.header("🛍️ Kategori Produk dengan Penjualan Tertinggi")
 
-    if "product_category_name_english" not in df.columns:
+    if "product_category_name_english" not in df_filtered.columns:
         st.error("⚠️ Data kategori produk tidak ditemukan.")
         st.stop()
 
-    category_sales = df["product_category_name_english"].value_counts().head(10).reset_index()
+    category_sales = df_filtered["product_category_name_english"].value_counts().head(10).reset_index()
     category_sales.columns = ["Kategori Produk", "Jumlah Penjualan"]
 
     fig_category = px.bar(
@@ -137,14 +136,14 @@ elif option == "Kategori Produk":
         x="Kategori Produk",
         y="Jumlah Penjualan",
         title="Top 10 Kategori Produk dengan Penjualan Tertinggi",
-        template="plotly_dark",
+        template=color_themes[selected_theme],
         color="Jumlah Penjualan"
     )
     st.plotly_chart(fig_category, use_container_width=True)
 
     # 🎯 Tren Penjualan Bulanan per Kategori Produk
-    df["order_month"] = df["order_purchase_timestamp"].dt.to_period("M").astype(str)
-    category_monthly_sales = df.groupby(["order_month", "product_category_name_english"])["order_id"].count().reset_index()
+    df_filtered["order_month"] = df_filtered["order_purchase_timestamp"].dt.to_period("M").astype(str)
+    category_monthly_sales = df_filtered.groupby(["order_month", "product_category_name_english"])["order_id"].count().reset_index()
 
     fig_category_trend = px.line(
         category_monthly_sales,
@@ -152,7 +151,7 @@ elif option == "Kategori Produk":
         y="order_id",
         color="product_category_name_english",
         title="📈 Tren Penjualan Bulanan per Kategori Produk",
-        template="plotly_dark",
+        template=color_themes[selected_theme],
         markers=True
     )
 
